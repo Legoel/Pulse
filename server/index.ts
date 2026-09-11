@@ -4,7 +4,6 @@ import path from "node:path";
 import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import { z } from "zod";
 import type {
   HostResponse,
   HostSession,
@@ -13,6 +12,7 @@ import type {
   Question,
   Quiz,
 } from "../src/types.js";
+import { quizSchema } from "../src/types.js";
 
 const rootDirectory = process.cwd();
 const dataDirectory = path.join(rootDirectory, "data");
@@ -33,46 +33,6 @@ interface Session {
   participants: Record<string, Participant>;
   answers: Record<string, Record<string, string[]>>;
 }
-
-const optionSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().trim().min(1).max(160),
-});
-const questionSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().trim().min(1).max(300),
-  type: z.enum(["single", "multiple"]),
-  options: z.array(optionSchema).min(2).max(8),
-  correctOptionIds: z.array(z.string()).min(1),
-});
-const quizSchema = z
-  .object({
-    title: z.string().trim().min(1).max(120),
-    questions: z.array(questionSchema).min(1).max(50),
-  })
-  .superRefine((quiz, context) => {
-    quiz.questions.forEach((question, questionIndex) => {
-      const optionIds = new Set(question.options.map((option) => option.id));
-      if (question.correctOptionIds.some((id) => !optionIds.has(id))) {
-        context.addIssue({
-          code: "custom",
-          message: "Une bonne réponse ne correspond à aucune option.",
-          path: ["questions", questionIndex],
-        });
-      }
-      if (
-        question.type === "single" &&
-        question.correctOptionIds.length !== 1
-      ) {
-        context.addIssue({
-          code: "custom",
-          message:
-            "Une question simple doit avoir exactement une bonne réponse.",
-          path: ["questions", questionIndex],
-        });
-      }
-    });
-  });
 
 function loadSession(): Session | null {
   try {

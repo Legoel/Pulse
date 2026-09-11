@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Check,
   ChevronRight,
   CirclePlus,
   Copy,
+  Download,
+  FileUp,
   Play,
   Presentation,
   QrCode,
   Radio,
+  RotateCcw,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -24,6 +28,7 @@ import {
 } from "recharts";
 import "./App.css";
 import { socket } from "./socket";
+import { quizSchema } from "./types";
 import type {
   HostResponse,
   HostSession,
@@ -44,32 +49,67 @@ const palette = [
   "#53727f",
 ];
 
+function formatImportError(issue: {
+  message: string;
+  path: PropertyKey[];
+}): string {
+  const questionIndex =
+    issue.path[0] === "questions" && typeof issue.path[1] === "number"
+      ? issue.path[1] + 1
+      : null;
+  const optionIndex =
+    issue.path[2] === "options" && typeof issue.path[3] === "number"
+      ? issue.path[3] + 1
+      : null;
+  if (!questionIndex) return issue.message;
+  const location = optionIndex
+    ? `Question ${questionIndex}, réponse ${optionIndex}`
+    : `Question ${questionIndex}`;
+  return `${location} : ${issue.message}`;
+}
+
 const starterQuiz: Quiz = {
-  title: "L’IA a-t-elle éclipsé l’éco-conception ?",
+  title: "Le grand test de connaissances parfaitement inutiles",
   questions: [
     {
       id: crypto.randomUUID(),
-      text: "Quel poste représente aujourd’hui la plus grande part de l’empreinte carbone du numérique en France ?",
-      type: "single",
+      text: "Pourquoi Superman porte-t-il son slip sur son pantalon ?",
+      type: "multiple",
       options: [
-        { id: crypto.randomUUID(), text: "Les centres de données" },
-        { id: crypto.randomUUID(), text: "Les réseaux" },
-        { id: crypto.randomUUID(), text: "Les terminaux utilisateurs" },
+        { id: crypto.randomUUID(), text: "Pour le salir moins vite." },
+        {
+          id: crypto.randomUUID(),
+          text: "Parce que personne n’ose lui faire la remarque.",
+        },
+        {
+          id: crypto.randomUUID(),
+          text: "Parce que c’est super dur de se changer dans une cabine téléphonique.",
+        },
+        {
+          id: crypto.randomUUID(),
+          text: "Il n’y a aucune explication officielle à cette question.",
+        },
       ],
       correctOptionIds: [],
     },
     {
       id: crypto.randomUUID(),
-      text: "Quels leviers contribuent à une application plus sobre ?",
-      type: "multiple",
+      text: "Pourquoi les flamants roses sont-ils roses ?",
+      type: "single",
       options: [
-        { id: crypto.randomUUID(), text: "Questionner le besoin" },
-        { id: crypto.randomUUID(), text: "Limiter les données transférées" },
         {
           id: crypto.randomUUID(),
-          text: "Multiplier les fonctionnalités par défaut",
+          text: "Parce qu’ils sont roses, c’est comme ça.",
         },
-        { id: crypto.randomUUID(), text: "Mesurer les usages réels" },
+        {
+          id: crypto.randomUUID(),
+          text: "Parce qu’ils mangent trop de crevettes.",
+        },
+        {
+          id: crypto.randomUUID(),
+          text: "Parce que le plumage, blanc d’origine, absorbe les rayons du soleil mais ne restitue que la couleur rose.",
+        },
+        { id: crypto.randomUUID(), text: "Parce qu’ils sont hyper girly." },
       ],
       correctOptionIds: [],
     },
@@ -77,11 +117,10 @@ const starterQuiz: Quiz = {
 };
 starterQuiz.questions[0].correctOptionIds = [
   starterQuiz.questions[0].options[2].id,
+  starterQuiz.questions[0].options[3].id,
 ];
 starterQuiz.questions[1].correctOptionIds = [
-  starterQuiz.questions[1].options[0].id,
   starterQuiz.questions[1].options[1].id,
-  starterQuiz.questions[1].options[3].id,
 ];
 
 function go(path: string): void {
@@ -171,6 +210,8 @@ function QuizEditor({
   error: string;
 }) {
   const [quiz, setQuiz] = useState<Quiz>(() => structuredClone(starterQuiz));
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const updateQuestion = (
     index: number,
     update: (question: Question) => Question,
@@ -198,6 +239,42 @@ function QuizEditor({
         },
       ],
     }));
+  const exportQuiz = () => {
+    const content = JSON.stringify(quiz, null, 2);
+    const file = new Blob([content], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(file);
+    link.download = `${
+      quiz.title
+        .trim()
+        .replace(/[^a-z0-9]+/gi, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase() || "quiz"
+    }.json`;
+    document.body.append(link);
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(link.href);
+      link.remove();
+    }, 0);
+  };
+  const importQuiz = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const parsedQuiz = quizSchema.safeParse(JSON.parse(await file.text()));
+      if (!parsedQuiz.success) {
+        setImportErrors(parsedQuiz.error.issues.map(formatImportError));
+        return;
+      }
+      setQuiz(parsedQuiz.data);
+      setImportErrors([]);
+    } catch {
+      setImportErrors(["Le fichier ne contient pas du JSON valide."]);
+    }
+  };
+  const closeImportErrors = () => setImportErrors([]);
 
   return (
     <main className="editor-shell">
@@ -210,14 +287,82 @@ function QuizEditor({
           <span className="eyebrow">Votre présentation</span>
           <h1>Préparez les questions</h1>
         </div>
-        <button
-          className="primary"
-          disabled={busy}
-          onClick={() => onLaunch(quiz)}
-        >
-          <Play /> {busy ? "Création…" : "Créer la session"}
-        </button>
+        <div className="editor-action-panel">
+          <div className="editor-actions">
+            <input
+              ref={fileInputRef}
+              className="file-input"
+              type="file"
+              accept="application/json,.json"
+              onChange={importQuiz}
+            />
+            <button
+              className="icon-text-button"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FileUp /> Importer
+            </button>
+            <button
+              className="icon-text-button"
+              type="button"
+              onClick={exportQuiz}
+            >
+              <Download /> Exporter
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => onLaunch(quiz)}
+            >
+              <Play /> {busy ? "Création…" : "Créer la session"}
+            </button>
+          </div>
+        </div>
       </div>
+      {importErrors.length > 0 && (
+        <div className="modal-backdrop" onClick={closeImportErrors}>
+          <section
+            className="import-errors-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-errors-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Import interrompu</span>
+                <h2 id="import-errors-title">
+                  {importErrors.length} erreur
+                  {importErrors.length > 1 ? "s" : ""} à corriger
+                </h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                title="Fermer"
+                aria-label="Fermer"
+                onClick={closeImportErrors}
+              >
+                <X />
+              </button>
+            </header>
+            <p>Le questionnaire en cours n’a pas été modifié.</p>
+            <ul>
+              {importErrors.map((importError, index) => (
+                <li key={`${importError}-${index}`}>{importError}</li>
+              ))}
+            </ul>
+            <button
+              className="primary"
+              type="button"
+              onClick={closeImportErrors}
+            >
+              Compris
+            </button>
+          </section>
+        </div>
+      )}
       <label className="field title-field">
         <span>Titre du quiz</span>
         <input
@@ -367,12 +512,18 @@ function QuizEditor({
 }
 
 function ResultsChart({ state }: { state: HostSession }) {
+  const showCorrectAnswers = state.phase === "results";
   const data =
     state.question?.options.map((option, index) => ({
-      name: `${String.fromCharCode(65 + index)}. ${option.text}`,
+      name: `${showCorrectAnswers && state.results?.find((result) => result.optionId === option.id)?.isCorrect ? "✓ " : ""}${String.fromCharCode(65 + index)}. ${option.text}`,
       votes:
         state.results?.find((result) => result.optionId === option.id)?.count ??
         0,
+      isCorrect:
+        showCorrectAnswers &&
+        (state.results?.find((result) => result.optionId === option.id)
+          ?.isCorrect ??
+          false),
       color: palette[index % palette.length],
     })) ?? [];
   return (
@@ -397,7 +548,11 @@ function ResultsChart({ state }: { state: HostSession }) {
             label={{ position: "right", fill: "#252722", fontWeight: 800 }}
           >
             {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
+              <Cell
+                key={entry.name}
+                fill={entry.isCorrect ? "#087f73" : entry.color}
+                opacity={showCorrectAnswers && !entry.isCorrect ? 0.35 : 1}
+              />
             ))}
           </Bar>
         </BarChart>
@@ -409,11 +564,20 @@ function ResultsChart({ state }: { state: HostSession }) {
 function HostLive({
   state,
   setState,
+  onNewQuiz,
 }: {
   state: HostSession;
   setState: (state: HostSession) => void;
+  onNewQuiz: () => void;
 }) {
   const joinUrl = `${window.location.origin}/join/${state.code}`;
+  const [showChart, setShowChart] = useState(false);
+  const chartVisible = showChart || state.phase === "results";
+  const correctOptions = state.question?.options.filter((option) =>
+    state.results?.some(
+      (result) => result.optionId === option.id && result.isCorrect,
+    ),
+  );
   useEffect(() => {
     const receive = (next: HostSession) => setState(next);
     socket.on("host:state", receive);
@@ -427,6 +591,21 @@ function HostLive({
       { hostToken: state.hostToken, action: name },
       (response: HostResponse) => response.state && setState(response.state),
     );
+  const resetQuiz = () => {
+    if (
+      !window.confirm(
+        "Interrompre le quiz ? Les participants verront que la session est terminée.",
+      )
+    )
+      return;
+    socket.emit(
+      "host:action",
+      { hostToken: state.hostToken, action: "finish" },
+      (response: HostResponse) => {
+        if (response.ok) onNewQuiz();
+      },
+    );
+  };
   if (state.phase === "lobby")
     return (
       <main className="live-shell lobby">
@@ -441,10 +620,7 @@ function HostLive({
           <div>
             <span className="eyebrow">La salle est ouverte</span>
             <h1>{state.title}</h1>
-            <p>
-              Scannez le QR code ou rendez-vous sur{" "}
-              <strong>{window.location.host}</strong>
-            </p>
+            <p>Scannez le QR code ou saisissez l’url dans votre navigateur.</p>
             <div className="session-code">
               {state.code.slice(0, 3)} {state.code.slice(3)}
             </div>
@@ -457,10 +633,11 @@ function HostLive({
               fgColor="#252722"
             />
             <button
-              className="text-button"
+              className="join-url-button"
+              title="Copier le lien de participation"
               onClick={() => navigator.clipboard.writeText(joinUrl)}
             >
-              <Copy /> Copier le lien
+              <Copy /> <span>{joinUrl}</span>
             </button>
           </div>
         </section>
@@ -482,13 +659,7 @@ function HostLive({
           <h1>Merci pour votre participation.</h1>
           <p>{state.participantCount} personnes ont pris part au quiz.</p>
         </div>
-        <button
-          className="secondary"
-          onClick={() => {
-            localStorage.removeItem("pulse-host-token");
-            go("/host");
-          }}
-        >
+        <button className="secondary" onClick={onNewQuiz}>
           Nouveau quiz
         </button>
       </main>
@@ -517,8 +688,31 @@ function HostLive({
               : "Une seule réponse"}
           </span>
           <h1>{state.question?.text}</h1>
+          {state.phase === "results" && correctOptions && (
+            <div className="correct-answers" aria-label="Bonnes réponses">
+              <Check />
+              <span>
+                {correctOptions.length > 1
+                  ? "Bonnes réponses"
+                  : "Bonne réponse"}{" "}
+                : {correctOptions.map((option) => option.text).join(" · ")}
+              </span>
+            </div>
+          )}
         </div>
-        <ResultsChart state={state} />
+        {chartVisible ? (
+          <ResultsChart state={state} />
+        ) : (
+          <div className="response-counter" aria-live="polite">
+            <Users />
+            <strong>{state.answeredCount}</strong>
+            <span>réponse{state.answeredCount > 1 ? "s" : ""}</span>
+            <small>
+              sur {state.participantCount} participant
+              {state.participantCount > 1 ? "s" : ""}
+            </small>
+          </div>
+        )}
       </section>
       <footer className="host-controls">
         <div>
@@ -534,6 +728,25 @@ function HostLive({
             }}
           />
         </div>
+        {state.phase === "question" && (
+          <label className="chart-toggle">
+            <input
+              type="checkbox"
+              checked={showChart}
+              onChange={(event) => setShowChart(event.target.checked)}
+            />
+            <span aria-hidden="true" />
+            Afficher le graphique
+          </label>
+        )}
+        <button
+          className="reset-session-button"
+          type="button"
+          title="Interrompre le quiz et revenir à la préparation"
+          onClick={resetQuiz}
+        >
+          <RotateCcw /> Repartir à zéro
+        </button>
         {state.phase === "question" ? (
           <button className="primary" onClick={() => action("results")}>
             Révéler les réponses
@@ -585,8 +798,12 @@ function Host() {
       setState(response.state);
     });
   };
+  const newQuiz = () => {
+    localStorage.removeItem("pulse-host-token");
+    setState(null);
+  };
   return state ? (
-    <HostLive state={state} setState={setState} />
+    <HostLive state={state} setState={setState} onNewQuiz={newQuiz} />
   ) : (
     <QuizEditor onLaunch={launch} busy={busy} error={error} />
   );

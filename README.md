@@ -20,6 +20,15 @@ flowchart LR
 
 Cette architecture monolithique suffit largement pour 20 à 30 participants et évite une base de données ou un service temps réel supplémentaire. Une seule instance serveur doit être utilisée, car l'état n'est pas partagé entre plusieurs réplicas.
 
+## Préparer, exporter et importer un quiz
+
+Dans `/host`, l'animateur prépare le questionnaire puis peut utiliser :
+
+- **Exporter** pour télécharger le questionnaire courant au format JSON. Le fichier contient le titre, les questions, les réponses et les bonnes réponses ; il ne contient ni session ni résultats.
+- **Importer** pour choisir un fichier JSON précédemment exporté. Le fichier est validé avant toute modification : il doit contenir 1 à 50 questions, 2 à 8 réponses par question et au moins une bonne réponse cohérente. Si la validation réussit, il remplace entièrement le questionnaire en cours de préparation.
+
+Ces actions sont indépendantes de **Créer la session** : un export ne bloque donc jamais le lancement du quiz.
+
 ## Démarrage local
 
 Prérequis : Node.js 24 ou supérieur.
