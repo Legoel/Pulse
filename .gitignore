@@ -24,3 +24,7 @@ data
 *.njsproj
 *.sln
 *.sw?
+
+# Control files
+deploy.ps1
+clean.ps1

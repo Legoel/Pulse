@@ -27,7 +27,13 @@ export default function Home() {
             <Presentation /> Préparer un quiz
           </button>
         </div>
-        <div className="join-panel">
+        <form
+          className="join-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            go(`/join/${code}`);
+          }}
+        >
           <QrCode size={30} />
           <h2>Rejoindre une session</h2>
           <p>Entrez le code affiché par l’animateur.</p>
@@ -43,12 +49,12 @@ export default function Home() {
           />
           <button
             className="secondary"
+            type="submit"
             disabled={code.length !== 6}
-            onClick={() => go(`/join/${code}`)}
           >
             Rejoindre <ChevronRight />
           </button>
-        </div>
+        </form>
       </section>
       <footer>
         Conçu pour les échanges qui méritent mieux qu’un silence poli.

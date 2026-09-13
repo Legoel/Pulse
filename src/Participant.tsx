@@ -73,7 +73,12 @@ export default function Participant({ initialCode }: { initialCode: string }) {
     return (
       <main className="participant-shell join-screen">
         <Brand />
-        <section>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            join();
+          }}
+        >
           <span className="eyebrow">Rejoindre le direct</span>
           <h1>À vous de jouer.</h1>
           <label className="field">
@@ -96,13 +101,13 @@ export default function Participant({ initialCode }: { initialCode: string }) {
           </label>
           <button
             className="primary large"
-            onClick={join}
+            type="submit"
             disabled={code.length !== 6 || !name.trim()}
           >
             Entrer dans la salle <ChevronRight />
           </button>
           {error && <p className="error-message">{error}</p>}
-        </section>
+        </form>
       </main>
     );
   if (state.phase === "lobby")
